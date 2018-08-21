@@ -34,8 +34,6 @@
 
 #include <string.h>
 
-#include "../../config.h"
-
 #include <SupportDefs.h>
 #include <StorageDefs.h>	/* Just because BeOS apps expect this here */
 #include <OS.h>
