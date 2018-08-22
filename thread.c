@@ -37,9 +37,26 @@
 
 #define FREE_SLOT 0xFFFFFFFF
 
+/* TODO: Haiku does not define this state in the thread_state type 
+ * Currently defined here until implementation is stable
+ */
+#define B_THREAD_SPAWNED 0 
+
+typedef struct {
+    /* Haiku */
+    thread_info         h;
+    /* Cosmoe additions */
+    thread_func		func;
+    void		*data;
+    pthread_t		pth;
+    int32		code;
+    thread_id		sender;
+    void		*buffer;
+} holk_thread_info;
+
 typedef void* (*pthread_entry) (void*);
 
-thread_info *thread_table = NULL;
+holk_thread_info *thread_table = NULL;
 static int thread_shm = -1;
 
 static void init_thread(void);
@@ -52,7 +69,7 @@ init_thread(void)
 {
 	key_t table_key;
 	bool created = true;
-	int size = sizeof(thread_info) * MAX_THREADS;
+	int size = sizeof(holk_thread_info) * MAX_THREADS;
 
 	if (thread_table)
 		return;
@@ -88,7 +105,7 @@ init_thread(void)
 		int i;
 		/* POTENTIAL RACE: table exists but is uninitialized until here */
 		for (i = 0; i < MAX_THREADS; i++)
-			thread_table[i].thread = FREE_SLOT;
+			thread_table[i].h.thread = FREE_SLOT;
 
 	}
 
@@ -104,18 +121,18 @@ spawn_thread(thread_func func, const char *name, int32 priority, void *data)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == FREE_SLOT)
+		if (thread_table[i].h.thread == FREE_SLOT)
 		{
 			if (!name)
 				name = "no-name thread";
 
 			thread_table[i].pth = -1; //not in the POSIX system yet
-			thread_table[i].thread = i;
-			thread_table[i].team = getpid();
-			thread_table[i].priority = priority;
-			thread_table[i].state = B_THREAD_SPAWNED;
-			strncpy(thread_table[i].name, name, B_OS_NAME_LENGTH);
-			thread_table[i].name[B_OS_NAME_LENGTH - 1] = '\0';
+			thread_table[i].h.thread = i;
+			thread_table[i].h.team = getpid();
+			thread_table[i].h.priority = priority;
+			thread_table[i].h.state = B_THREAD_SPAWNED;
+			strncpy(thread_table[i].h.name, name, B_OS_NAME_LENGTH);
+			thread_table[i].h.name[B_OS_NAME_LENGTH - 1] = '\0';
 			thread_table[i].func = func;
 			thread_table[i].data = data;
 			thread_table[i].code = 0;
@@ -138,12 +155,12 @@ kill_thread(thread_id thread)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == thread)
+		if (thread_table[i].h.thread == thread)
 		{
 			if (pthread_kill(thread_table[i].pth, SIGKILL) == 0)
 			{
-				thread_table[i].thread = FREE_SLOT;
-				thread_table[i].team = 0;
+				thread_table[i].h.thread = FREE_SLOT;
+				thread_table[i].h.team = 0;
 				if (thread_table[i].buffer)
 					free(thread_table[i].buffer);
 
@@ -165,10 +182,10 @@ rename_thread(thread_id thread, const char *newName)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == thread)
+		if (thread_table[i].h.thread == thread)
 		{
-			strncpy(thread_table[i].name, newName, B_OS_NAME_LENGTH);
-			thread_table[i].name[B_OS_NAME_LENGTH - 1] = '\0';
+			strncpy(thread_table[i].h.name, newName, B_OS_NAME_LENGTH);
+			thread_table[i].h.name[B_OS_NAME_LENGTH - 1] = '\0';
 
 			return B_OK;
 		}
@@ -190,8 +207,8 @@ exit_thread(status_t status)
 	{
 		if (thread_table[i].pth == this_thread)
 		{
-			thread_table[i].thread = FREE_SLOT;
-			thread_table[i].team = 0;
+			thread_table[i].h.thread = FREE_SLOT;
+			thread_table[i].h.team = 0;
 			if (thread_table[i].buffer)
 				free(thread_table[i].buffer);
 			break;
@@ -217,7 +234,7 @@ send_data(thread_id thread, int32 code, const void *buffer, size_t buffer_size)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == thread)
+		if (thread_table[i].h.thread == thread)
 		{
 			thread_table[i].code = code;
 			if (buffer)
@@ -243,7 +260,7 @@ receive_data(thread_id *sender, void *buffer, size_t bufferSize)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread != FREE_SLOT)
+		if (thread_table[i].h.thread != FREE_SLOT)
 		{
 			if (*sender)
 				thread_table[i].sender = *sender;
@@ -273,7 +290,7 @@ has_data(thread_id thread)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == thread)
+		if (thread_table[i].h.thread == thread)
 			return (thread_table[i].buffer != NULL);
 	}
 
@@ -289,10 +306,10 @@ void teardown_threads()
 	/* Free thread table entries created by our process */
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].team == getpid())
+		if (thread_table[i].h.team == getpid())
 		{
-			thread_table[i].thread = FREE_SLOT;
-			thread_table[i].team = 0;
+			thread_table[i].h.thread = FREE_SLOT;
+			thread_table[i].h.team = 0;
 			count++;
 		}
 	}
@@ -312,14 +329,14 @@ _get_thread_info(thread_id id, thread_info *info, size_t size)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == id)
+		if (thread_table[i].h.thread == id)
 		{
 			info->thread = id;
-			strncpy (info->name, thread_table[i].name, B_OS_NAME_LENGTH);
+			strncpy (info->name, thread_table[i].h.name, B_OS_NAME_LENGTH);
 			info->name[B_OS_NAME_LENGTH - 1] = '\0';
-			info->state = thread_table[i].state;
-			info->priority = thread_table[i].priority;
-			info->team = thread_table[i].team;
+			info->state = thread_table[i].h.state;
+			info->priority = thread_table[i].h.priority;
+			info->team = thread_table[i].h.team;
 			return B_OK;
 		}
 	}
@@ -339,11 +356,11 @@ _get_next_thread_info(team_id team, int32 *_cookie, thread_info *info, size_t si
 	int i;
 	for (i = *_cookie; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].team == team)
+		if (thread_table[i].h.team == team)
 		{
 			*_cookie = i + 1;
 
-			return _get_thread_info(thread_table[i].thread, info, size);
+			return _get_thread_info(thread_table[i].h.thread, info, size);
 		}
 	}
 
@@ -364,11 +381,11 @@ find_thread(const char *name)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread != FREE_SLOT)
+		if (thread_table[i].h.thread != FREE_SLOT)
 		{
 			if (!pth)
 			{
-				if (strcmp(thread_table[i].name, name) == 0)
+				if (strcmp(thread_table[i].h.name, name) == 0)
 					return i;
 			}
 			else
@@ -391,9 +408,9 @@ set_thread_priority(thread_id id, int32 priority)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == id)
+		if (thread_table[i].h.thread == id)
 		{
-			thread_table[i].priority = priority;
+			thread_table[i].h.priority = priority;
 			return B_OK;
 		}
 	}
@@ -435,7 +452,7 @@ wait_for_thread(thread_id id, status_t *_returnCode)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == id)
+		if (thread_table[i].h.thread == id)
 		{
 			if (pthread_join(thread_table[i].pth, (void**)_returnCode) == 0)
 				return B_OK;
@@ -455,10 +472,11 @@ suspend_thread(thread_id id)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == id)
+		if (thread_table[i].h.thread == id)
 		{
+                        // https://stackoverflow.com/questions/11468333/linux-threads-suspend-resume1
 			pthread_kill(thread_table[i].pth, SIGSTOP);
-			thread_table[i].state = B_THREAD_SUSPENDED;
+			thread_table[i].h.state = B_THREAD_SUSPENDED;
 
 			return B_OK;
 		}
@@ -476,9 +494,9 @@ resume_thread(thread_id id)
 	int i;
 	for (i = 0; i < MAX_THREADS; i++)
 	{
-		if (thread_table[i].thread == id)
+		if (thread_table[i].h.thread == id)
 		{
-			switch (thread_table[i].state)
+			switch (thread_table[i].h.state)
 			{
 				case B_THREAD_SPAWNED:
 				{
@@ -488,7 +506,7 @@ resume_thread(thread_id id)
 										thread_table[i].data) == 0)
 					{
 						thread_table[i].pth = tid;
-						thread_table[i].state = B_THREAD_RUNNING;
+						thread_table[i].h.state = B_THREAD_RUNNING;
 						return B_OK;
 					}
 
@@ -497,7 +515,7 @@ resume_thread(thread_id id)
 
 				case B_THREAD_SUSPENDED:
 					pthread_kill(thread_table[i].pth, SIGCONT);
-					thread_table[i].state = B_THREAD_RUNNING;
+					thread_table[i].h.state = B_THREAD_RUNNING;
 					return B_OK;
 
 				default:
