@@ -181,12 +181,6 @@ sem_id create_sem(int32 count,
 }
 
 
-status_t delete_sem(sem_id id)
-{
-	return delete_sem_etc(id, 0, false);
-}
-
-
 status_t delete_sem_etc(sem_id id,
 						status_t return_code,
 						bool interrupted)
@@ -230,6 +224,12 @@ status_t delete_sem_etc(sem_id id,
 	while (count >= 0 && count != SEMVMX);
 
 	return B_OK;
+}
+
+
+status_t delete_sem(sem_id id)
+{
+	return delete_sem_etc(id, 0, false);
 }
 
 

@@ -21,6 +21,11 @@
 #include <string.h>
 #include <stdlib.h>
 
+
+/* Imports */
+extern sem_id create_sem_etc(int32 count, const char *name, team_id owner);
+
+
 #define dprintf printf
 #define panic printf
 #define team_get_current_team_id getpid
@@ -776,16 +781,17 @@ port_count(port_id id)
 	return count;
 }
 
-status_t
-read_port(port_id port, int32 *msgCode, void *msgBuffer, size_t bufferSize)
+
+ssize_t
+read_port(port_id port, int32 *code, void *buffer, size_t bufferSize)
 {
-	return read_port_etc(port, msgCode, msgBuffer, bufferSize, 0, 0);
+	return read_port_etc(port, code, buffer, bufferSize, 0, 0);
 }
 
 
-status_t
-read_port_etc(port_id id, int32 *_msgCode, void *msgBuffer, size_t bufferSize,
-	uint32 flags, bigtime_t timeout)
+ssize_t
+read_port_etc(port_id port, int32 *code, void *buffer, size_t bufferSize,
+    uint32 flags, bigtime_t timeout)
 {
 	sem_id cachedSem;
 	status_t status;
@@ -798,23 +804,23 @@ read_port_etc(port_id id, int32 *_msgCode, void *msgBuffer, size_t bufferSize,
 	if (!sPortsActive)
 		port_init();
 
-	if (!sPortsActive || id < 0)
+	if (!sPortsActive || port < 0)
 		return B_BAD_PORT_ID;
 
-	if (_msgCode == NULL
-		|| (msgBuffer == NULL && bufferSize > 0)
+	if (code == NULL
+		|| (buffer == NULL && bufferSize > 0)
 		|| timeout < 0)
 		return B_BAD_VALUE;
 
 	flags = flags & (B_CAN_INTERRUPT | B_TIMEOUT | B_RELATIVE_TIMEOUT |
 		B_ABSOLUTE_TIMEOUT);
-	slot = id % gMaxPorts;
+	slot = port % gMaxPorts;
 
 	GRAB_PORT_LOCK(sPorts[slot]);
 
-	if (sPorts[slot].id != id) {
+	if (sPorts[slot].id != port) {
 		RELEASE_PORT_LOCK(sPorts[slot]);
-		dprintf("read_port_etc: invalid port_id %ld\n", id);
+		dprintf("read_port_etc: invalid port_id %ld\n", port);
 		return B_BAD_PORT_ID;
 	}
 	// store sem_id in local variable
@@ -875,10 +881,10 @@ read_port_etc(port_id id, int32 *_msgCode, void *msgBuffer, size_t bufferSize,
 	size = min(bufferSize, msg->size);
 
 	// copy message
-	*_msgCode = msg->code;
+	*code = msg->code;
 	if (size > 0) {
-		if (msgBuffer)
-			memcpy(msgBuffer, msg->buffer_chain, size);
+		if (buffer)
+			memcpy(buffer, msg->buffer_chain, size);
 	}
 	put_port_msg(msg);
 
