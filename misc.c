@@ -48,9 +48,11 @@
 #warning system_time() will always return 0 on this platform
 #endif
 
+// extern status_t		get_cpu_info(uint32 firstCPU, uint32 cpuCount, cpu_info* info);
+
 
 /* helper for get_system_info */
-static void get_cpu_info( system_info* psInfo )
+static void _get_cpu_info(system_info* psInfo)
 {
 #if defined(linux)
 	FILE*         fp;
@@ -63,7 +65,8 @@ static void get_cpu_info( system_info* psInfo )
 
 	systime = system_time();
 	psInfo->boot_time = real_time_clock_usecs() - systime;
-	psInfo->bus_clock_speed = 66;	/* FIXME */
+        // TODO: Review old and new headers
+	// psInfo->bus_clock_speed = 66;
 	ncpu = 0;
 	if( (fp = fopen( "/proc/cpuinfo", "r" )) != NULL )
 	{
@@ -73,9 +76,9 @@ static void get_cpu_info( system_info* psInfo )
 			{
 				ncpu++;
 			}
-
+#ifdef HOLK_CALCULATE_CPU_SPEED
 			if( strncmp( buf, "cpu MHz\t", 8 ) == 0 &&
-				ncpu < B_MAX_CPU_COUNT )
+				ncpu < SMP_MAX_CPUS )
 			{
 				p = strchr( buf, ':' );
 				if( p != NULL )
@@ -83,11 +86,12 @@ static void get_cpu_info( system_info* psInfo )
 					psInfo->cpu_clock_speed = atoi( p+2 );
 				}
 			}
+#endif
 		}
 		fclose( fp );
 	}
 	psInfo->cpu_count = ncpu;
-
+#ifdef HOLK_CALCULATE_CPU_ACTIVE_TIME
 	if( (fp = fopen( "/proc/stat", "r" )) != NULL )
 	{
 		while( fgets( buf, sizeof(buf), fp ) != NULL )
@@ -113,6 +117,7 @@ static void get_cpu_info( system_info* psInfo )
 		}
 		fclose( fp );
 	}
+#endif
 #endif
 }
 
@@ -145,11 +150,17 @@ status_t _get_system_info( system_info* psInfo, size_t size )
 		strcpy( psInfo->kernel_build_time, "unknown" );
 	}
 	psInfo->kernel_version = 2LL;
-	get_cpu_info( psInfo ); /* set boot time and cpu info */
+	_get_cpu_info( psInfo ); /* set boot time and cpu info */
 	get_mem_info( psInfo ); /* set various mem info */
 	get_fs_info( psInfo );  /* set various fs info */
 
 	return 0;
+}
+
+
+status_t get_system_info(system_info* info)
+{
+    _get_system_info((info), sizeof(*(info)));
 }
 
 
@@ -171,10 +182,8 @@ void	debugger(const char *message)
 }
 
 
-
-
 status_t
-set_timezone(char *timezone)
+set_timezone(const char *timezone)
 {
 	/* FIXME */
 	return B_ERROR;
