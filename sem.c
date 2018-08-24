@@ -51,6 +51,8 @@ in the administrative group (ADMIN_AREA_SEM).
 #include <errno.h>
 #include <sys/time.h>
 
+#include <unistd.h>
+
 /* Use GNU extensions to pick up semtimedop() from sem.h */
 #ifndef __USE_GNU
 #define __USE_GNU
