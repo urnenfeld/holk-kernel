@@ -1,5 +1,5 @@
 # holk-kernel
-Kernel for Holk, This is currently a fork of cosmoe library kernel to be used inside the hold project.
+Kernel for Holk, This is currently a fork of cosmoe library kernel to be used inside the holk project.
 
 ## Investigations
 This sections describes the investigations followed to cover the requirements of Haiku Kernel with a Linux Kernel
